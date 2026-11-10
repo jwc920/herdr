@@ -2,9 +2,32 @@
   "active": "sp7aa913d0a859c76a86ec057b566e38bd",
   "spaces": {
     "sp0ccedc36c83a6296781047bf7ab2f165": "tbc0c2daef5cb7af091382a333d65b04ad",
-    "sp7aa913d0a859c76a86ec057b566e38bd": "tb9cff30a392b3e853078e43205a784b09"
+    "sp2810bafabbc76ebd863c70eeaa6f6e80": "tbe939c420a6c52e5f61b369d027b86587",
+    "sp6b6f29bf85997b20ace84932672fc6f3": "tbe2f1c12857d91c20f47a3caebc1223f4",
+    "sp7aa913d0a859c76a86ec057b566e38bd": "tb9cff30a392b3e853078e43205a784b09",
+    "spcb18662e461ad68960ab2bb27cf73fc1": "tb6faa117d1b9ece3af080ece359a3ff7d",
+    "spd01bfd461b6d742ccade80a15335ca64": "tb8a0cae0aa0ca4311fd5e0c404955a6ed",
+    "spd5550a06e5415646edfea4d78489bc71": "tb80ec4352e91643805bf3263a691064ea"
   },
   "tabs": {
+    "tb6faa117d1b9ece3af080ece359a3ff7d": {
+      "focused": "p9f423554755e254762cf06ab5b0653dc",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "tb80ec4352e91643805bf3263a691064ea": {
+      "focused": "pd56ab9e1c861e0c79c1eaa108df9cf7f",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "tb8a0cae0aa0ca4311fd5e0c404955a6ed": {
+      "focused": "pb6b87585a6407a99222b8a532e5d5ef1",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
     "tb9cff30a392b3e853078e43205a784b09": {
       "focused": "pe3654a6ee8b7d4f119e20a230c76aa3f",
       "before": [
@@ -14,10 +37,22 @@
       "settled": null
     },
     "tbc0c2daef5cb7af091382a333d65b04ad": {
-      "focused": "p0c0d00f48a37be6aa982bdc8658eab4c",
+      "focused": "p89df21910876da211eefcad7c3192ba9",
       "before": [
-        "p89df21910876da211eefcad7c3192ba9"
+        "p0c0d00f48a37be6aa982bdc8658eab4c"
       ],
+      "zoomed": null,
+      "settled": null
+    },
+    "tbe2f1c12857d91c20f47a3caebc1223f4": {
+      "focused": "p7fe05b10d087a56aa4022acabbf25eb7",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
+    "tbe939c420a6c52e5f61b369d027b86587": {
+      "focused": "pae3e40c07bbf74c4badea314487b4d54",
+      "before": [],
       "zoomed": null,
       "settled": null
     },
@@ -34,6 +69,14 @@
       "word": "idle",
       "seen": true
     },
+    "t10": {
+      "word": null,
+      "seen": true
+    },
+    "t11": {
+      "word": null,
+      "seen": true
+    },
     "t2": {
       "word": null,
       "seen": true
@@ -43,10 +86,26 @@
       "seen": true
     },
     "t4": {
-      "word": "idle",
+      "word": "working",
       "seen": true
     },
     "t5": {
+      "word": null,
+      "seen": true
+    },
+    "t6": {
+      "word": null,
+      "seen": true
+    },
+    "t7": {
+      "word": null,
+      "seen": true
+    },
+    "t8": {
+      "word": null,
+      "seen": true
+    },
+    "t9": {
       "word": null,
       "seen": true
     }
