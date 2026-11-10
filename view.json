@@ -1,0 +1,54 @@
+{
+  "active": "sp7aa913d0a859c76a86ec057b566e38bd",
+  "spaces": {
+    "sp0ccedc36c83a6296781047bf7ab2f165": "tbc0c2daef5cb7af091382a333d65b04ad",
+    "sp7aa913d0a859c76a86ec057b566e38bd": "tb9cff30a392b3e853078e43205a784b09"
+  },
+  "tabs": {
+    "tb9cff30a392b3e853078e43205a784b09": {
+      "focused": "pe3654a6ee8b7d4f119e20a230c76aa3f",
+      "before": [
+        "p77462db3679a8e1ee1e44b9fc47deb1c"
+      ],
+      "zoomed": null,
+      "settled": null
+    },
+    "tbc0c2daef5cb7af091382a333d65b04ad": {
+      "focused": "p0c0d00f48a37be6aa982bdc8658eab4c",
+      "before": [
+        "p89df21910876da211eefcad7c3192ba9"
+      ],
+      "zoomed": null,
+      "settled": null
+    },
+    "tbee6ea21acf828be7743d4f15a8ddd024": {
+      "focused": "pcdaa25dd6b8702594ee20c856a0df60c",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    }
+  },
+  "recent": [],
+  "attention": {
+    "t1": {
+      "word": "idle",
+      "seen": true
+    },
+    "t2": {
+      "word": null,
+      "seen": true
+    },
+    "t3": {
+      "word": null,
+      "seen": true
+    },
+    "t4": {
+      "word": "idle",
+      "seen": true
+    },
+    "t5": {
+      "word": null,
+      "seen": true
+    }
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "nodes": {
+    "desktop": {
+      "size": {
+        "px": 70.0
+      }
+    },
+    "main": {
+      "pane": {
+        "header_height": 15.0,
+        "border": {
+          "width": 2.5,
+          "color": "#c0c0c0"
+        },
+        "focus": {
+          "width": 2.5,
+          "color": "#c0c0c0"
+        }
+      }
+    },
+    "root": {
+      "font_size": 16.0
+    },
+    "taskbar": {
+      "size": {
+        "px": 23.333
+      }
+    }
+  },
+  "file": {
+    "id": "root",
+    "type": "column",
+    "children": [
+      {
+        "id": "screen",
+        "type": "row",
+        "children": [
+          {
+            "id": "desktop",
+            "type": "block",
+            "content": {
+              "mod": "win98",
+              "props": {
+                "role": "desktop"
+              }
+            },
+            "size": {
+              "px": 120.0
+            },
+            "window_drag": true
+          },
+          {
+            "id": "main",
+            "type": "block",
+            "content": {
+              "tab": "active",
+              "pane": {
+                "header": {
+                  "content": {
+                    "mod": "win98",
+                    "props": {
+                      "role": "window"
+                    }
+                  },
+                  "reveal": "always",
+                  "height": 25.714000701904297,
+                  "position": "top"
+                },
+                "background": "#000000",
+                "border": {
+                  "width": 4.285999774932861,
+                  "color": "#c0c0c0"
+                },
+                "focus": {
+                  "width": 4.285999774932861,
+                  "color": "#c0c0c0"
+                },
+                "radius": 0.0,
+                "gap": 8.0,
+                "lone": true
+              }
+            },
+            "padding": [
+              10.0,
+              10.0
+            ]
+          }
+        ],
+        "resizable": false,
+        "floating": [
+          {
+            "id": "clippy",
+            "content": {
+              "mod": "win98",
+              "props": {
+                "role": "clippy"
+              }
+            },
+            "edge": "left",
+            "align": "end"
+          }
+        ]
+      },
+      {
+        "id": "taskbar",
+        "type": "block",
+        "content": {
+          "mod": "win98",
+          "props": {
+            "role": "taskbar"
+          }
+        },
+        "size": {
+          "px": 40.0
+        },
+        "window_drag": true
+      }
+    ],
+    "background": "#008080",
+    "theme": "win98",
+    "font": "PxPlus IBM VGA 8x16",
+    "font_size": 22.85700035095215,
+    "ui_font": "Pixelated MS Sans Serif",
+    "terminal_padding": [
+      4.0,
+      2.0
+    ],
+    "terminal_opacity": 0.0,
+    "titlebar": "none",
+    "traffic_lights": [
+      14.0,
+      14.0
+    ],
+    "preview": "layouts/win98.svg"
+  }
+}
