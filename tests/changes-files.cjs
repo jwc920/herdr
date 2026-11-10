@@ -34,13 +34,13 @@ const cx = {notify(){}, spawn(fn){jobs.push(fn(cx));}};
   assert.equal(panel.rows.length, 1500);
   let rendered = 0;
   panel.diffRow = () => {rendered++; return chain();};
-  for (const page of [0, 1, 18]) {
-    panel.diffPage = page; rendered = 0; panel.reviewDiff({});
-    assert.ok(rendered > 0 && rendered <= 80);
+  for (const page of [0, 1, 24]) {
+    rendered = 0; panel.renderDiffChunk(page,{});
+    assert.ok(rendered > 0 && rendered <= 60);
   }
   panel.open = 'empty.js'; await panel.load('empty.js', panel.context);
   assert.equal(panel.rows.length, 1);
   assert.match(panel.rows[0].text, /Empty file/);
   assert.equal(panel.rows[0].number, undefined);
-  console.log('PASS: upfront full-file counts, empty/binary/unreadable files, Unicode paths, and bounded large-file pages.');
+  console.log('PASS: upfront full-file counts, empty/binary/unreadable files, Unicode paths, and bounded continuous-scroll chunks.');
 })().catch(error => {console.error(error);process.exitCode=1;});

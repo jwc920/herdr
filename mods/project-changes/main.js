@@ -1,4 +1,4 @@
-import { View, div } from "gpui-kit";
+import { View, div, list, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, Scrollbar } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, agents, hc } from "herdr";
 
@@ -11,7 +11,7 @@ function location() {
 const key = () => JSON.stringify({ ...location(), tab: focused()?.tab });
 // Reads write nothing under .git (no index refresh or lock, no fsmonitor cookie):
 // the folder watch would see it, and every refresh would start the next one.
-const DIFF_PAGE_SIZE = 80;
+const DIFF_CHUNK_SIZE = 60;
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
 
 function diffPalette(t) {
@@ -39,6 +39,13 @@ function diffRows(lines) {
   });
 }
 
+// Each retained chunk renders in its own host call, so long diffs don't
+// exhaust a single script render. Native list lays out only visible chunks.
+class DiffChunk extends View {
+  init(props) { this.owner = props.owner; this.index = props.index; }
+  render() { return this.owner.renderDiffChunk(this.index, theme()); }
+}
+
 export default class Changes extends View {
   init(_props, cx) {
     this.files = []; this.rows = []; this.diffWidth = 0; this.message = ""; this.handle = cx.focus_handle();
@@ -46,16 +53,24 @@ export default class Changes extends View {
     this.input.on("change", (_e, cx) => {
       const hadMessage = Boolean(this.message.trim());
       this.message = this.input.value();
-      if (hadMessage !== Boolean(this.message.trim())) cx.notify();
+      if (hadMessage !== Boolean(this.message.trim())) this.notify(cx);
     });
     this.input.on("submit", (_e, cx) => this.commit(cx));
-    this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
-    this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    this.input.on("focus", (_e, cx) => { this.typing = true; this.notify(cx); });
+    this.input.on("blur", (_e, cx) => { this.typing = false; this.notify(cx); });
     try { this.reviews = JSON.parse(localStorage.getItem("reviews.v1") ?? "{}"); } catch { this.reviews = {}; }
     this.editors = {};
     this.editorFocus = {};
+    this.diffChunks = Array.from({ length: Math.ceil(1500 / DIFF_CHUNK_SIZE) }, (_, index) => cx.new(DiffChunk, { owner: this, index }));
+    cx.timer.every(40, cx => { if (this.diffDirty) { this.diffDirty = false; cx.notify(); } });
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
+  }
+
+  notify(cx) {
+    this.diffDirty = true;
+    cx.notify();
+    for (const chunk of this.diffChunks ?? []) cx.notify(chunk);
   }
 
   watch(root, cx) {
@@ -75,7 +90,6 @@ export default class Changes extends View {
     if (this.loading || this.busy || this.selection) return;
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
-      this.diffPage = 0;
       this.context = context; this.root = null; this.files = []; this.open = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note = null; this.watched = null; this.closed = false; this.limited = false;
     }
@@ -134,7 +148,7 @@ export default class Changes extends View {
           catch { if (key() === context) this.setLines(["Cannot preview this diff (too large or unreadable)"]); }
         }
       } catch (e) { if (key() === context) this.error = String(e); }
-      finally { this.loading = false; cx.notify(); }
+      finally { this.loading = false; this.notify(cx); }
     });
   }
 
@@ -162,20 +176,19 @@ export default class Changes extends View {
   setLines(lines) {
     this.rows = diffRows(lines);
     this.diffWidth = Math.max(380, ...lines.map(line => line.length * 7 + 80));
-    this.diffPage = Math.min(this.diffPage ?? 0, Math.max(0, Math.ceil(this.rows.length / DIFF_PAGE_SIZE) - 1));
   }
 
   pick(path, cx) {
-    this.selection = null; this.diffPage = 0; this.activeComment = null;
+    this.selection = null; this.activeComment = null;
     this.open = this.open === path ? null : path; this.setLines([]); this.note = null;
     this.closed = !this.open;
     const context = this.context;
     if (this.open) cx.spawn(async (cx) => {
       try { await this.load(path, context); }
       catch (e) { if (key() === context && this.open === path) this.note = `Cannot preview this diff (too large or unreadable): ${e}`; }
-      cx.notify();
+      this.notify(cx);
     });
-    cx.notify();
+    this.notify(cx);
   }
 
   commit(cx) {
@@ -190,9 +203,9 @@ export default class Changes extends View {
         }
         if (key() === context) { this.message = ""; this.input.set_value(""); }
       } catch (e) { if (key() === context) this.note = `Commit failed: ${e}`; }
-      finally { this.busy = false; this.refresh(cx); cx.notify(); }
+      finally { this.busy = false; this.refresh(cx); this.notify(cx); }
     });
-    cx.notify();
+    this.notify(cx);
   }
 
   review() {
@@ -213,7 +226,7 @@ export default class Changes extends View {
       input.on("change", (_e, cx) => {
         this.lastInputEdit ??= {};
         this.lastInputEdit[c.id] = { before: c.body, after: input.value() };
-        c.body = input.value(); this.saveReviews(); cx.notify();
+        c.body = input.value(); this.saveReviews(); this.notify(cx);
       });
       input.on("submit", (event, cx) => this.submitComment(event, c, review, input, cx));
       this.editors[c.id] = input;
@@ -235,24 +248,24 @@ export default class Changes extends View {
       && this.lineAnchor.hunk === row.hunk && this.lineNumber(row, this.lineAnchor.side) !== undefined) {
       this.selection.start = this.lineAnchor.index; this.selection.side = this.lineAnchor.side;
     } else this.lineAnchor = { path: this.open, context: this.context, index: row.index, side: this.selection.side, hunk: row.hunk };
-    cx.stop_propagation(); cx.notify();
+    cx.stop_propagation(); this.notify(cx);
   }
 
   extendSelection(row, cx) {
     const selection = this.selection;
     if (!selection || selection.path !== this.open || selection.context !== this.context
       || row.hunk !== selection.hunk || this.lineNumber(row, selection.side) === undefined) return;
-    if (selection.end !== row.index) { selection.end = row.index; cx.notify(); }
+    if (selection.end !== row.index) { selection.end = row.index; this.notify(cx); }
   }
 
   finishSelection(cx) {
     const selection = this.selection;
     this.selection = null;
-    if (!selection || selection.path !== this.open || selection.context !== key()) { cx.notify(); return; }
+    if (!selection || selection.path !== this.open || selection.context !== key()) { this.notify(cx); return; }
     const low = Math.min(selection.start, selection.end), high = Math.max(selection.start, selection.end);
     const rows = this.rows.filter(row => row.index >= low && row.index <= high && row.hunk === selection.hunk
       && this.lineNumber(row, selection.side) !== undefined);
-    if (!rows.length) { cx.notify(); return; }
+    if (!rows.length) { this.notify(cx); return; }
     this.beginComment(rows[0], cx, rows, selection.side);
   }
 
@@ -279,7 +292,7 @@ export default class Changes extends View {
     c.editing = true;
     this.activeComment = { c, review };
     this.editor(c, review, cx).focus();
-    this.saveReviews(); cx.notify();
+    this.saveReviews(); this.notify(cx);
   }
 
   lineLabel(c) {
@@ -307,7 +320,23 @@ export default class Changes extends View {
     c.editing = false; c.savedBody = c.body;
     this.selection = null;
     if (this.activeComment?.c === c) this.activeComment = null;
-    this.saveReviews(); this.handle.focus(); cx.notify();
+    this.saveReviews(); this.handle.focus(); this.notify(cx);
+  }
+
+  clearComments(cx) {
+    const review = this.review();
+    if (!review || this.sending) return;
+    for (const comment of review.comments) {
+      this.editors[comment.id]?.release();
+      delete this.editors[comment.id];
+      this.editorFocus?.[comment.id]?.release?.();
+      if (this.editorFocus) delete this.editorFocus[comment.id];
+      if (this.lastInputEdit) delete this.lastInputEdit[comment.id];
+    }
+    review.comments = []; review.notice = "";
+    this.selection = null; this.lineAnchor = null;
+    if (this.activeComment?.review === review) this.activeComment = null;
+    this.saveReviews(); this.handle.focus(); this.notify(cx);
   }
 
   removeComment(c, review, cx) {
@@ -316,7 +345,7 @@ export default class Changes extends View {
     this.editors[c.id]?.release(); delete this.editors[c.id];
     if (this.activeComment?.c === c) this.activeComment = null;
     this.selection = null;
-    this.saveReviews(); this.handle.focus(); cx.notify();
+    this.saveReviews(); this.handle.focus(); this.notify(cx);
   }
 
   cancelComment(c, review, cx) {
@@ -325,7 +354,7 @@ export default class Changes extends View {
       c.body = c.savedBody; c.editing = false; this.editors[c.id]?.set_value(c.body);
     } else { this.removeComment(c, review, cx); return; }
     this.selection = null;
-    this.activeComment = null; this.saveReviews(); this.handle.focus(); cx.notify();
+    this.activeComment = null; this.saveReviews(); this.handle.focus(); this.notify(cx);
   }
 
   sendReview(cx) {
@@ -345,12 +374,12 @@ export default class Changes extends View {
         if (result.code !== 0) throw new Error(result.stderr || result.stdout || "Could not send review");
         review.comments = review.comments.filter(c => !comments.some(sent => sent.id === c.id && sent.body === c.body));
         for (const c of comments) { if (!review.comments.some(left => left.id === c.id)) { this.editors[c.id]?.release(); delete this.editors[c.id]; } }
-        review.notice = `Sent ${comments.length} comments to ${agent.title || agent.app || agent.address}`;
+        review.notice = "";
         this.saveReviews();
       } catch (error) { review.notice = `Review not sent; drafts kept: ${error}`; }
-      finally { this.sending = false; cx.notify(); }
+      finally { this.sending = false; this.notify(cx); }
     });
-    cx.notify();
+    this.notify(cx);
   }
 
   commentCard(c, review, t) {
@@ -369,7 +398,7 @@ export default class Changes extends View {
           if (this.sending) return;
           if (c.editing && this.editors[c.id]) { this.addComment(c, cx); return; }
           else { c.editing = true; this.editor(c, review, cx).focus(); }
-          this.saveReviews(); cx.notify();
+          this.saveReviews(); this.notify(cx);
         }));
   }
 
@@ -377,35 +406,52 @@ export default class Changes extends View {
     return c.number !== undefined && (c.endNumber ?? c.number) === this.lineNumber(row, c.side) && (c.endCode ?? c.code) === row.text;
   }
 
-  reviewDiff(t) {
+  renderDiffChunk(index, t) {
     const review = this.review();
     const comments = review?.comments.filter(c => c.path === this.open) ?? [];
-    const unmatched = comments.filter(c => !this.rows.some(row => this.sameAnchor(c, row)));
+    const rows = this.rows.slice(index * DIFF_CHUNK_SIZE, (index + 1) * DIFF_CHUNK_SIZE);
+    const unmatched = index === 0 ? comments.filter(c => !this.rows.some(row => this.sameAnchor(c, row))) : [];
     return v_flex().w_full().min_w(this.diffWidth).flex_none()
       .children(unmatched.map(c => this.commentCard(c, review, t)))
-      .children(this.rows.slice((this.diffPage ?? 0) * DIFF_PAGE_SIZE, ((this.diffPage ?? 0) + 1) * DIFF_PAGE_SIZE).map(row => v_flex().flex_none().child(this.diffRow(row, t))
+      .children(rows.map(row => v_flex().flex_none().child(this.diffRow(row, t))
         .children(comments.filter(c => this.sameAnchor(c, row)).map(c => this.commentCard(c, review, t)))));
+  }
+
+  guardDiffScroll(event, cx) {
+    // The inner list owns vertical scrolling. Keep vertical wheel events
+    // from reaching the outer horizontal scroller, which maps Y to X.
+    if (Math.abs(event.delta.y) >= Math.abs(event.delta.x)) cx.stop_propagation();
+  }
+
+  reviewDiff() {
+    const count = Math.ceil(this.rows.length / DIFF_CHUNK_SIZE);
+    return div().size_full().min_w(this.diffWidth)
+      .on_scroll_wheel((event, cx) => this.guardDiffScroll(event, cx))
+      .child(list(`diff-lines-${this.open}`, count, index => String(index),
+        index => div().child(this.diffChunks[index])).size_full());
   }
 
   reviewFooter(t) {
     const review = this.review();
-    if (!review || !review.comments.length && !review.notice) return div();
-    const count = review.comments.filter(c => !c.editing && c.body.trim()).length;
+    if (!review) return div();
+    const pending = review.comments.filter(c => !c.editing && c.body.trim());
+    const count = pending.length;
+    const error = review.notice?.startsWith("Review not sent") ? review.notice : "";
+    if (!count && !error) return div();
+    const paths = [...new Set(pending.map(c => c.path))];
     const candidates = agents().filter(a => a.tab === review.tab && a.space === review.space);
     const selected = candidates.find(a => a.address === review.address) ?? (!review.address && candidates.length === 1 ? candidates[0] : null);
     const ready = count && selected && !this.sending;
     return v_flex().flex_none().p(10).gap(6).border_t(1).border_color(t.border)
-      .child(div().text_size(12).child(`Pending review · ${count} comments`))
-      .when(review.comments.some(c => c.editing && c.body.trim()), el => el.child(div().text_size(11).text_color(t.dim).child("Press Enter or Add comment to include your draft in the review.")))
-      .child(v_flex().max_h(90).overflow_y_scroll().children([...new Set(review.comments.map(c => c.path))].map(path =>
+      .when(paths.length > 1, el => el.child(v_flex().max_h(90).overflow_y_scroll().children(paths.map(path =>
         div().id(`review-file-${path}`).text_size(11).truncate().cursor_pointer().text_color(t.accent)
-          .child(`${path} (${review.comments.filter(c => c.path === path).length})`)
-          .on_click((_e, cx) => { if (this.open !== path) this.pick(path, cx); }))))
-      .child(v_flex().children(candidates.map(a => div().id(`review-agent-${a.address}`).text_size(11).cursor_pointer()
-        .child(`${selected?.address === a.address ? "●" : "○"} ${a.title || a.app || a.address} · ${a.address}`)
-        .on_click((_e, cx) => { if (!this.sending) { review.address = a.address; this.saveReviews(); cx.notify(); } }))))
+          .child(`${path} (${pending.filter(c => c.path === path).length})`)
+          .on_click((_e, cx) => { if (this.open !== path) this.pick(path, cx); })))))
+      .when(candidates.length > 1, el => el.child(v_flex().children(candidates.map(a => div().id(`review-agent-${a.address}`).text_size(11).cursor_pointer()
+        .child(`${selected?.address === a.address ? "●" : "○"} ${a.program?.name || a.app || "Agent"} · ${a.address}`)
+        .on_click((_e, cx) => { if (!this.sending) { review.address = a.address; this.saveReviews(); this.notify(cx); } })))))
       .when(!candidates.length, el => el.child(div().text_size(11).text_color(t.dim).child("Start an agent in this tab to send the review.")))
-      .when(Boolean(review.notice), el => el.child(div().text_size(11).child(review.notice)))
+      .when(Boolean(error), el => el.child(div().text_size(11).text_color(t.ansi1).child(error)))
       .child(div().id("send-review").h(32).px(10).rounded(6).flex().items_center().bg(ready ? t.solid : t.raised)
         .text_color(ready ? t.solid_foreground : t.dim).child(this.sending ? "Sending review…" : `Send review (${count})`)
         .on_click((_e, cx) => { if (ready) this.sendReview(cx); }));
@@ -445,23 +491,35 @@ export default class Changes extends View {
       .child(div().flex_1().min_w(0).truncate().child(text));
   }
 
+  commentCounts() {
+    const counts = {};
+    for (const comment of this.review()?.comments ?? []) {
+      if (comment.body.trim()) counts[comment.path] = (counts[comment.path] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   render(cx) {
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
+    const commentCounts = this.commentCounts();
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
     return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
-      .on_mouse_down_out((_e, cx) => { if (this.selection) { this.selection = null; cx.notify(); } })
+      .on_mouse_down_out((_e, cx) => { if (this.selection) { this.selection = null; this.notify(cx); } })
       .on_mouse_up("left", (_e, cx) => { if (this.selection) this.finishSelection(cx); })
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.activeComment?.c.editing && this.activeComment.review === this.review()) {
           this.cancelComment(this.activeComment.c, this.activeComment.review, cx); cx.stop_propagation(); return;
         }
-        if (e.key === "escape" && this.selection) { this.selection = null; cx.stop_propagation(); cx.notify(); return; }
-        if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
+        if (e.key === "escape" && this.selection) { this.selection = null; cx.stop_propagation(); this.notify(cx); return; }
+        if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); this.notify(cx); }
       })
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Changes"))
         .when(Boolean(this.open), el => el.child(div().id("comment-file").text_size(11).cursor_pointer().child("Comment…").on_click((_e, cx) => this.beginComment(null, cx))))
+        .when(Boolean(this.review()?.comments.length), el => el.child(div().id("clear-review-comments").text_size(11)
+          .text_color(this.sending ? t.dim : t.muted).cursor_pointer().child("Clear all comments")
+          .on_click((_e, cx) => this.clearComments(cx))))
         .child(div().px(5).py(1).rounded(4).border_1().border_color(t.border).text_size(10).text_color(t.muted).child(`${this.files.length} files`))
         .child(div().flex_1()).child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
       // overflow_y_scrollbar() wraps the list, so its flex sizing never reached the panel's layout.
@@ -471,23 +529,20 @@ export default class Changes extends View {
         return h_flex().id(`change-${f.path}`).h(28).flex_none().px(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
           .child(div().w(14).text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
           .child(h_flex().flex_1().min_w(0).child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : "")).child(div().max_w(260).min_w(0).truncate().child(name)))
+          .when(Boolean(commentCounts[f.path]), el => el.child(h_flex().id(`file-comments-${f.path}`).flex_none().gap(4).px(5).py(1).rounded(4).bg(t.raised).text_color(t.accent)
+            .child(svg("mods/project-changes/comment.svg").size(12))
+            .child(div().text_size(11).child(String(commentCounts[f.path])))))
           .when(!f.binary && !f.countUnavailable && (f.add > 0 || f.status === "A"), (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`−${f.del}`)))
           .when(f.binary || f.countUnavailable, e => e.child(div().text_size(11).text_color(t.dim).child(f.binary ? "Binary" : "Count unavailable")));
       })).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
         .child(Scrollbar.vertical("changes-list").absolute().inset_0()))
       .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
       .when(Boolean(this.open), el => el.child(div().flex_none().px(12).py(6).text_size(11).text_color(t.dim).truncate().child(`${this.open} · Click + or drag line numbers to comment`)))
-      .when(this.rows.length > DIFF_PAGE_SIZE, el => el.child(h_flex().flex_none().h(30).px(12).gap(10).items_center().text_size(11)
-        .child(div().id("diff-prev-page").cursor_pointer().text_color((this.diffPage ?? 0) > 0 ? t.accent : t.dim).child("← Previous")
-          .on_click((_e, cx) => { this.diffPage = Math.max(0, (this.diffPage ?? 0) - 1); this.selection = null; cx.notify(); }))
-        .child(div().flex_1().text_color(t.dim).child(`Page ${(this.diffPage ?? 0) + 1} / ${Math.ceil(this.rows.length / DIFF_PAGE_SIZE)}`))
-        .child(div().id("diff-next-page").cursor_pointer().text_color(((this.diffPage ?? 0) + 1) * DIFF_PAGE_SIZE < this.rows.length ? t.accent : t.dim).child("Next →")
-          .on_click((_e, cx) => { this.diffPage = Math.min(Math.ceil(this.rows.length / DIFF_PAGE_SIZE) - 1, (this.diffPage ?? 0) + 1); this.selection = null; cx.notify(); }))))
       .when(this.rows.length >= 1500, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Preview limited to 1,500 diff lines; file counts show the full file.")))
       .child(div().flex_1().min_h(80).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
-        .child(v_flex().id(`changes-diff-${this.open}-${this.diffPage ?? 0}`).absolute().inset_0().overflow_scroll()
-          .child(this.reviewDiff(t)))
-        .child(Scrollbar.vertical(`changes-diff-${this.open}-${this.diffPage ?? 0}`).absolute().inset_0())
+        .child(div().id("changes-diff-horizontal").absolute().inset_0().overflow_x_scroll()
+          .child(this.reviewDiff()))
+        .child(Scrollbar.vertical(`diff-lines-${this.open}`).absolute().inset_0())
         .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes"))))
       .child(this.reviewFooter(t))
       .when(Boolean(this.note), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note)))

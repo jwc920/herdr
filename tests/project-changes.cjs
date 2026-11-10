@@ -13,7 +13,7 @@ const cx={focus_handle(){return {focus(){}}},stop_propagation(){},bind_keys(){},
  assert.equal(review.comments.length,2);assert.equal(JSON.parse(store['reviews.v1'])[review.id].comments.length,2);
  assert.equal(p.sameAnchor(review.comments[1],{kind:'-',number:9,text:'old line'}),true);
  assert.equal(p.sameAnchor(review.comments[1],{kind:'+',number:9,text:'old line'}),false);
- p.addComment(c,cx);p.reviewDiff({});p.reviewFooter({});
+ p.addComment(c,cx);p.renderDiffChunk(0,{});p.reviewFooter({});
  f={...f,tab:'other'};p.sendReview(cx);assert.equal(messages.length,0);f={...f,tab:'one'};
  agentList.push({address:'b',tab:'one',space:'project'});p.sendReview(cx);assert.equal(messages.length,0);review.address='a';
  fail=true;p.sendReview(cx);await Promise.all(jobs);jobs=[];assert.equal(review.comments.length,2);assert.match(review.notice,/drafts kept/);
@@ -91,5 +91,29 @@ const cx={focus_handle(){return {focus(){}}},stop_propagation(){},bind_keys(){},
  p.removeComment(p.activeComment.c,review,cx);assert.equal(p.isSelectedLine(rows[1]),false);assert.equal(p.activeComment,null);
  p.startSelection(rows[1],cx);p.extendSelection(rows[5],cx);p.finishSelection(cx);
  p.cancelComment(p.activeComment.c,review,cx);assert.equal(p.isSelectedLine(rows[1]),false);
+
+ let stopped=0;const wheelCx={stop_propagation(){stopped++;}};
+ p.guardDiffScroll({delta:{x:0,y:-40}},wheelCx);assert.equal(stopped,1);
+ p.guardDiffScroll({delta:{x:2,y:-40}},wheelCx);assert.equal(stopped,2);
+ p.guardDiffScroll({delta:{x:-40,y:0}},wheelCx);assert.equal(stopped,2);
+ p.guardDiffScroll({delta:{x:40,y:2}},wheelCx);assert.equal(stopped,2);
+
+ const badgeReview=p.review();badgeReview.comments=[
+   {path:'a.js',body:'First'}, {path:'a.js',body:'Second',editing:true},
+   {path:'b.js',body:'Third'}, {path:'empty.js',body:'   '}
+ ];
+ assert.equal(p.commentCounts()['a.js'],2);assert.equal(p.commentCounts()['b.js'],1);
+ assert.equal(p.commentCounts()['empty.js'],undefined);
+ badgeReview.comments.splice(0,1);assert.equal(p.commentCounts()['a.js'],1);
+ f={...f,tab:'other'};assert.equal(Object.keys(p.commentCounts()).length,0);
+
+ // Clear all is scoped to the current review, includes drafts, and persists.
+ const elsewhere={id:'elsewhere',comments:[{id:'keep',path:'keep.js',body:'Keep me'}]};p.reviews.elsewhere=elsewhere;
+ f={...f,tab:'one'};
+ p.activeComment={review:badgeReview,c:badgeReview.comments[0]};p.selection={start:1,end:2};
+ p.sending=true;p.clearComments(cx);assert.equal(badgeReview.comments.length,3);p.sending=false;
+ p.clearComments(cx);assert.equal(badgeReview.comments.length,0);assert.equal(p.activeComment,null);assert.equal(p.selection,null);
+ assert.equal(elsewhere.comments.length,1);assert.equal(Object.keys(p.commentCounts()).length,0);
+ assert.equal(JSON.parse(store['reviews.v1'])[badgeReview.id].comments.length,0);
  console.log('PASS: repeated anchors, forward/reverse drag ranges, old/new context, hunk/tab boundaries, persistent drafts, explicit Add, and same-tab batch send, native Enter submit, Shift+Enter, and newline cleanup.');
 })().catch(e=>{console.error(e);process.exit(1)});
