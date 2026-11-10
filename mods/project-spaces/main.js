@@ -257,21 +257,26 @@ export default class Spaces extends View {
       && this.ordering.machines.every(name => machines().some(m => m.name === name && m.layout === "ready"));
   }
 
+  projectFor(space, ps) {
+    const git = this.git[where(space, ps)];
+    if (!git) return null;
+    if (!git.linked) return space;
+    const candidates = spaces().filter(s => {
+      const info = this.git[where(s, ps)];
+      return info && !info.linked && info.repo === git.repo;
+    });
+    const key = JSON.stringify([space.machine ?? null, git.top]);
+    const assigned = (shared("project.worktrees") ?? {})[key];
+    return candidates.find(s => s.id === assigned) ?? candidates[0] ?? null;
+  }
+
   // Spaces in order, each worktree space moved under its main checkout's.
   ordered() {
     const sp = spaces(), ps = panes();
     const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
     const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null }));
-    const assignments = shared("project.worktrees") ?? {};
-    const mains = list.filter(r => r.g && !r.g.linked);
-    const parentOf = (r) => {
-      if (!r.g?.linked) return null;
-      const key = JSON.stringify([r.w.machine ?? null, r.g.top]);
-      const assigned = assignments[key];
-      return mains.find(m => m.w.id === assigned && m.g.repo === r.g.repo)?.w.id
-        ?? mains.find(m => m.g.repo === r.g.repo)?.w.id ?? null;
-    };
+    const parentOf = r => r.g?.linked ? this.projectFor(r.w, ps)?.id ?? null : null;
     const out = [];
     for (const r of list) {
       if (parentOf(r)) continue;
@@ -383,7 +388,8 @@ export default class Spaces extends View {
 
   row({ w, i, g, tree }, t) {
     const on = w.active;
-    const fromIndex = this.pressed === null ? -1 : spaces().findIndex(s => s.id === this.pressed);
+    const dragged = spaces().find(s => s.id === this.pressed);
+    const intoProject = !g?.linked && dragged && this.git[where(dragged, panes())]?.linked;
     const colors = shared("space.colors") ?? {};
     const color = colors[w.id] ?? "ansi6";
     const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
@@ -399,39 +405,54 @@ export default class Spaces extends View {
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .when(this.pressed === w.id && this.over !== w.id, (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === w.id && this.pressed !== w.id, (el) => el.child(
-        div().absolute().left(0).right(0).h(2).bg(t.accent)
-          .when(fromIndex < i, line => line.bottom(0))
-          .when(fromIndex > i, line => line.top(0)),
+        // Center on the shared row boundary: the lower half of one
+        // row and the upper half of the next show the exact same line.
+        div().absolute().left(8).right(8).h(2).bg(t.accent)
+          .when(this.dropAfter || intoProject, line => line.bottom(-1))
+          .when(!this.dropAfter && !intoProject, line => line.top(-1)),
       ))
-      .on_mouse_down("left", () => {
+      .on_mouse_down("left", (_e, cx) => {
         this.pressed = w.id;
         this.over = w.id;
+        this.dropAfter = false;
+        cx.notify();
       })
-      .on_mouse_move((_e, cx) => {
+      .on_mouse_move((e, cx) => {
         const source = spaces().find(s => s.id === this.pressed);
         const over = source && (source.machine ?? null) === (w.machine ?? null) ? w.id : null;
-        if (this.pressed !== null && this.over !== over) {
+        const after = e.local_position.y >= e.bounds.height / 2;
+        if (this.pressed !== null && (this.over !== over || this.dropAfter !== after)) {
           this.over = over;
+          this.dropAfter = after;
           cx.notify();
         }
       })
       .on_mouse_up("left", (_e, cx) => {
         const from = this.pressed;
         const over = this.over;
+        const after = this.dropAfter;
         this.pressed = null;
         this.over = null;
-        if (from !== null && over === w.id && from !== w.id) {
+        if (from !== null && over !== null && from !== over) {
+          const target = spaces().find(s => s.id === over);
+          if (!target) { cx.notify(); return; }
           const source = spaces().find(s => s.id === from);
           const ps = panes();
           const sourceGit = source && this.git[where(source, ps)];
-          const targetGit = this.git[where(w, ps)];
-          if (sourceGit?.linked && targetGit && !targetGit.linked && sourceGit.repo === targetGit.repo) {
+          const targetGit = this.git[where(target, ps)];
+          const project = this.projectFor(target, ps);
+          if (sourceGit?.linked && project && targetGit && sourceGit.repo === targetGit.repo) {
             const key = JSON.stringify([source.machine ?? null, sourceGit.top]);
-            setShared("project.worktrees", { ...(shared("project.worktrees") ?? {}), [key]: w.id });
+            setShared("project.worktrees", { ...(shared("project.worktrees") ?? {}), [key]: project.id });
+            this.ordering = null;
           }
-          const index = spaces().findIndex(s => s.id === w.id);
-          if (index !== -1) run("space.move", { id: from, index: index + 1 });
-        } else if (from === w.id) run("space.select", { id: w.id });
+          // Compute the final index after removing the dragged row. A project
+          // header always receives task worktrees as its first child.
+          const remaining = spaces().filter(s => s.id !== from);
+          const index = remaining.findIndex(s => s.id === target.id);
+          const dropAfter = sourceGit?.linked && !targetGit?.linked ? true : after;
+          if (index !== -1) run("space.move", { id: from, index: index + (dropAfter ? 2 : 1) });
+        } else if (from !== null && from === over) run("space.select", { id: from });
         cx.notify();
       })
       .on_mouse_down("right", () => this.menu(w))

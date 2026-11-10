@@ -5,7 +5,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, shared, setShared } from "herdr";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 function place(s) {
@@ -60,11 +60,13 @@ function items(p, git) {
         ["New tab", "tab.new", { space: tg.space }],
         ["Close", "tab.close", { id: tg.id }],
       ];
+    case "assign":
+      return (p.projects ?? []).map(s => [s.name, "assign-project", { id: s.id }]);
     case "space":
       return [
         ["Rename", "space.rename", { id: tg.id }],
         ...(git ? [["New worktree", "worktree", { space: tg.id, action: "new" }], ["Open worktree", "worktree", { space: tg.id, action: "open" }]] : []),
-        ...(git === "linked" ? [["Remove worktree", "worktree", { space: tg.id, action: "remove" }]] : []),
+        ...(git === "linked" ? [["Move worktree to project…", "assign-worktree", { id: tg.id }], ["Remove worktree", "worktree", { space: tg.id, action: "remove" }]] : []),
         ["Close", "space.close", { id: tg.id }],
       ];
     default:
@@ -109,10 +111,33 @@ export default class Menu extends View {
   }
 
   choose(i, cx) {
-    const it = items(props(), this.git)[i];
+    const currentProps = props();
+    const it = items(currentProps, this.git)[i];
     if (!it) return;
     closeOverlay(props()?.overlay);
-    if (it[1] === "worktree") openOverlay({ mod: "project-worktree", kind: "dialog", ...(it[2].action === "open" ? { width: 560, height: 480 } : { width: 440, height: 260 }), props: it[2] });
+    if (it[1] === "assign-worktree") {
+      const source = spaces().find(s => s.id === it[2].id);
+      if (!source) return;
+      cx.spawn(async cx => {
+        const folder = place(source);
+        const options = { cwd: folder, on: source.machine };
+        const top = await exec("git", ["rev-parse", "--show-toplevel"], options);
+        const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], options);
+        if (top.code !== 0 || common.code !== 0) return;
+        const projects = [];
+        for (const candidate of spaces()) {
+          if (candidate.id === source.id || (candidate.machine ?? null) !== (source.machine ?? null)) continue;
+          const cwd = place(candidate);
+          if (!cwd) continue;
+          const opts = { cwd, on: candidate.machine };
+          const [ctop, ccommon] = await Promise.all([exec("git", ["rev-parse", "--show-toplevel"], opts), exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], opts)]);
+          if (ctop.code === 0 && ccommon.code === 0 && ccommon.stdout.trim() === common.stdout.trim() && ccommon.stdout.trim() === `${ctop.stdout.trim()}/.git`) projects.push({ id: candidate.id, name: candidate.name });
+        }
+        if (projects.length) openOverlay({ mod: "project-menu", kind: "popup", width: 250, height: 400, props: { tab: "assign", projects, key: JSON.stringify([source.machine ?? null, top.stdout.trim()]) } });
+      });
+    } else if (it[1] === "assign-project") {
+      setShared("project.worktrees", { ...(shared("project.worktrees") ?? {}), [currentProps.key]: it[2].id });
+    } else if (it[1] === "worktree") openOverlay({ mod: "project-worktree", kind: "dialog", ...(it[2].action === "open" ? { width: 560, height: 480 } : { width: 440, height: 260 }), props: it[2] });
     else run(it[1], it[2]);
   }
 
