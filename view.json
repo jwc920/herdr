@@ -10,6 +10,12 @@
     "spd5550a06e5415646edfea4d78489bc71": "tb80ec4352e91643805bf3263a691064ea"
   },
   "tabs": {
+    "tb1031aa4a83b8e1bbd0eb438fd87eae61": {
+      "focused": "p258cb2a377f86ecb5b005a817c9ae65d",
+      "before": [],
+      "zoomed": null,
+      "settled": null
+    },
     "tb6faa117d1b9ece3af080ece359a3ff7d": {
       "focused": "p9f423554755e254762cf06ab5b0653dc",
       "before": [],
@@ -29,10 +35,8 @@
       "settled": null
     },
     "tb9cff30a392b3e853078e43205a784b09": {
-      "focused": "pe3654a6ee8b7d4f119e20a230c76aa3f",
-      "before": [
-        "p77462db3679a8e1ee1e44b9fc47deb1c"
-      ],
+      "focused": "p77462db3679a8e1ee1e44b9fc47deb1c",
+      "before": [],
       "zoomed": null,
       "settled": null
     },
@@ -63,7 +67,12 @@
       "settled": null
     }
   },
-  "recent": [],
+  "recent": [
+    {
+      "name": "",
+      "folder": "/Users/jasonchoi/.config/herdr-app"
+    }
+  ],
   "attention": {
     "t1": {
       "word": "idle",
@@ -74,6 +83,18 @@
       "seen": true
     },
     "t11": {
+      "word": null,
+      "seen": true
+    },
+    "t12": {
+      "word": null,
+      "seen": true
+    },
+    "t13": {
+      "word": null,
+      "seen": true
+    },
+    "t14": {
       "word": null,
       "seen": true
     },

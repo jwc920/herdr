@@ -1,5 +1,11 @@
 {
   "nodes": {
+    "panel": {
+      "size": {
+        "px": 1138.0
+      },
+      "hidden": false
+    },
     "panel-body": {
       "active": "changes"
     }
@@ -148,7 +154,7 @@
                         "id": "changes",
                         "type": "block",
                         "content": {
-                          "mod": "changes"
+                          "mod": "project-changes"
                         }
                       }
                     ],
